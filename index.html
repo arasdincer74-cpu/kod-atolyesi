@@ -98,6 +98,20 @@ footer .wrap{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .spin{transform-origin:50% 62%;animation:spin 1.4s linear infinite}
 @keyframes spin{0%{transform:scaleX(1)}25%{transform:scaleX(.35)}50%{transform:scaleX(1)}75%{transform:scaleX(.35)}100%{transform:scaleX(1)}}
 @media (prefers-reduced-motion:reduce){.spin{animation:none}}
+
+.game{display:grid;place-items:center;padding:12px}
+.score{font-family:var(--font-mono);font-size:16px}
+.score b{color:var(--accent)}
+.pad{display:grid;grid-template-columns:repeat(3,56px);gap:8px}
+.pad button{align-self:auto;width:56px;height:56px;padding:0;font-size:22px;touch-action:manipulation}
+.pad .u{grid-column:2}
+.hint{margin:0;color:var(--muted);font-size:15px}
+#tt{width:100%;max-width:240px;height:auto;aspect-ratio:1/2;border-radius:8px;border:2px solid var(--line);background:var(--surface);touch-action:none}
+#nx{width:96px;height:96px;border-radius:8px;border:2px solid var(--line);background:var(--surface)}
+.stats{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--font-mono);font-size:15px}
+.stats b{color:var(--accent);font-size:18px}
+.next-row{display:flex;align-items:center;gap:14px;font-weight:600;font-size:16px}
+.pad .wide{grid-column:1/-1;width:auto;height:44px;font-size:16px}
 </style>
 </head>
 <body>
@@ -109,6 +123,7 @@ footer .wrap{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
         <li><a href="#hakkimda">Hakkımda</a></li>
         <li><a href="#yazilim">Yazılım</a></li>
         <li><a href="#lab">Mini Lab</a></li>
+        <li><a href="#oyun">Oyun</a></li>
         <li><a href="#projeler">Projeler</a></li>
         <li><a href="#yol">Yol Haritam</a></li>
       </ul>
@@ -262,6 +277,34 @@ footer .wrap{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
       </div>
     </section>
 
+    <section id="oyun">
+      <h2>Oyun köşesi: Tetris</h2>
+      <p class="sub">Düşen parçaları döndür ve yerleştir. Satırı doldurursan satır silinir, puan kazanırsın. Her 10 satırda hız artar.</p>
+      <div class="lab">
+        <div class="card game">
+          <canvas id="tt" width="240" height="480" aria-label="Tetris oyun alanı"></canvas>
+        </div>
+        <div class="card sim">
+          <div class="stats">
+            <span>Skor <b id="sc">0</b></span>
+            <span>Satır <b id="ln">0</b></span>
+            <span>Seviye <b id="lv">1</b></span>
+            <span>En iyi <b id="best">0</b></span>
+          </div>
+          <div class="next-row"><span>Sıradaki</span><canvas id="nx" width="96" height="96" aria-label="Sıradaki parça"></canvas></div>
+          <button type="button" id="start">Başla</button>
+          <div class="pad" aria-label="Oyun düğmeleri">
+            <button type="button" class="u" data-a="rotate" aria-label="Döndür">&#8635;</button>
+            <button type="button" data-a="left" aria-label="Sola">&#8592;</button>
+            <button type="button" data-a="down" aria-label="Aşağı">&#8595;</button>
+            <button type="button" data-a="right" aria-label="Sağa">&#8594;</button>
+            <button type="button" class="wide" data-a="drop">Hızlı düşür</button>
+          </div>
+          <p class="hint">Klavye: &#8592; &#8594; hareket, &#8593; döndür, &#8595; hızlandır, boşluk tuşu hızlı düşürür.</p>
+        </div>
+      </div>
+    </section>
+
     <section id="yol">
       <h2>Yol haritam</h2>
       <p class="sub">Yazılımda ilerlemek için kendime koyduğum adımlar.</p>
@@ -307,6 +350,152 @@ footer .wrap{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
     else{clearTimeout(timer);btn.textContent='Başlat';}
   });
   tick();
+})();
+</script>
+<script>
+(function(){
+  var cv=document.getElementById('tt'),cx=cv.getContext('2d'),C=10,R=20,S=24;
+  var nv=document.getElementById('nx'),nc=nv.getContext('2d');
+  var scEl=document.getElementById('sc'),lnEl=document.getElementById('ln'),lvEl=document.getElementById('lv'),bestEl=document.getElementById('best'),startBtn=document.getElementById('start');
+  var COL=['#00b8d9','#f2c200','#a35cff','#2bb673','#e0361f','#2f6bff','#ff8a1f'];
+  var SH=[[[1,1,1,1]],[[1,1],[1,1]],[[0,1,0],[1,1,1]],[[0,1,1],[1,1,0]],[[1,1,0],[0,1,1]],[[1,0,0],[1,1,1]],[[0,0,1],[1,1,1]]];
+  var board,cur,nextId,bag=[],score=0,lines=0,level=1,best=0,timer=null,alive=false,over=false;
+  try{best=+localStorage.getItem('tetrisBest')||0}catch(e){}
+  bestEl.textContent=best;
+  function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+  function take(){
+    if(!bag.length){
+      bag=[0,1,2,3,4,5,6];
+      for(var i=bag.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=bag[i];bag[i]=bag[j];bag[j]=t}
+    }
+    return bag.pop();
+  }
+  function collide(m,x,y){
+    for(var r=0;r<m.length;r++)for(var c=0;c<m[r].length;c++){
+      if(!m[r][c])continue;
+      var X=x+c,Y=y+r;
+      if(X<0||X>=C||Y>=R)return true;
+      if(Y>=0&&board[Y][X])return true;
+    }
+    return false;
+  }
+  function rot(m){
+    var h=m.length,w=m[0].length,n=[];
+    for(var c=0;c<w;c++){n[c]=[];for(var r=0;r<h;r++)n[c][h-1-r]=m[r][c]}
+    return n;
+  }
+  function stats(){scEl.textContent=score;lnEl.textContent=lines;lvEl.textContent=level}
+  function reset(){
+    board=[];for(var r=0;r<R;r++){board.push(new Array(C).fill(0))}
+    score=0;lines=0;level=1;over=false;bag=[];nextId=take();stats();
+  }
+  function spawn(){
+    var m=SH[nextId].map(function(r){return r.slice()});
+    cur={id:nextId,m:m,x:Math.floor((C-m[0].length)/2),y:0};
+    nextId=take();
+    if(collide(cur.m,cur.x,cur.y)){end();return false}
+    return true;
+  }
+  function cell(ctx,x,y,id,size,alpha){
+    ctx.globalAlpha=alpha;
+    ctx.fillStyle=COL[id];
+    ctx.fillRect(x*size+1,y*size+1,size-2,size-2);
+    ctx.globalAlpha=alpha*0.35;
+    ctx.fillStyle='#fff';
+    ctx.fillRect(x*size+1,y*size+1,size-2,4);
+    ctx.globalAlpha=1;
+  }
+  function ghostY(){var y=cur.y;while(!collide(cur.m,cur.x,y+1))y++;return y}
+  function drawNext(){
+    nc.fillStyle=css('--surface');nc.fillRect(0,0,96,96);
+    if(nextId==null)return;
+    var m=SH[nextId],ox=(96-m[0].length*24)/2/24,oy=(96-m.length*24)/2/24;
+    for(var r=0;r<m.length;r++)for(var c=0;c<m[r].length;c++)if(m[r][c])cell(nc,ox+c,oy+r,nextId,24,1);
+  }
+  function draw(){
+    cx.fillStyle=css('--surface');cx.fillRect(0,0,cv.width,cv.height);
+    cx.strokeStyle=css('--line');cx.globalAlpha=.5;cx.lineWidth=1;
+    for(var i=1;i<C;i++){cx.beginPath();cx.moveTo(i*S,0);cx.lineTo(i*S,cv.height);cx.stroke()}
+    for(var k=1;k<R;k++){cx.beginPath();cx.moveTo(0,k*S);cx.lineTo(cv.width,k*S);cx.stroke()}
+    cx.globalAlpha=1;
+    for(var r=0;r<R;r++)for(var c=0;c<C;c++)if(board[r][c])cell(cx,c,r,board[r][c]-1,S,1);
+    if(cur&&alive){
+      var gy=ghostY();
+      for(var a=0;a<cur.m.length;a++)for(var b=0;b<cur.m[a].length;b++)if(cur.m[a][b]){
+        cell(cx,cur.x+b,gy+a,cur.id,S,.25);
+      }
+      for(var a2=0;a2<cur.m.length;a2++)for(var b2=0;b2<cur.m[a2].length;b2++)if(cur.m[a2][b2]){
+        cell(cx,cur.x+b2,cur.y+a2,cur.id,S,1);
+      }
+    }
+    if(over){
+      cx.fillStyle='rgba(0,0,0,.6)';cx.fillRect(0,0,cv.width,cv.height);
+      cx.fillStyle='#fff';cx.textAlign='center';
+      cx.font='700 30px sans-serif';cx.fillText('Oyun bitti',cv.width/2,cv.height/2-6);
+      cx.font='18px sans-serif';cx.fillText('Skor: '+score,cv.width/2,cv.height/2+26);
+    }
+  }
+  function speed(){return Math.max(90,800-(level-1)*70)}
+  function schedule(){clearTimeout(timer);if(alive)timer=setTimeout(tick,speed())}
+  function end(){
+    alive=false;over=true;clearTimeout(timer);
+    if(score>best){best=score;bestEl.textContent=best;try{localStorage.setItem('tetrisBest',best)}catch(e){}}
+    startBtn.textContent='Tekrar oyna';
+    draw();
+  }
+  function lock(){
+    for(var r=0;r<cur.m.length;r++)for(var c=0;c<cur.m[r].length;c++){
+      if(cur.m[r][c]&&cur.y+r>=0)board[cur.y+r][cur.x+c]=cur.id+1;
+    }
+    var n=0;
+    for(var y=R-1;y>=0;y--){
+      if(board[y].every(Boolean)){board.splice(y,1);board.unshift(new Array(C).fill(0));n++;y++}
+    }
+    if(n){
+      score+=[0,100,300,500,800][n]*level;lines+=n;level=Math.floor(lines/10)+1;
+    }
+    stats();
+    if(spawn()){drawNext()}
+  }
+  function tick(){
+    if(!alive)return;
+    if(!collide(cur.m,cur.x,cur.y+1)){cur.y++}else{lock()}
+    draw();schedule();
+  }
+  function move(dx){if(!alive)return;if(!collide(cur.m,cur.x+dx,cur.y)){cur.x+=dx;draw()}}
+  function rotate(){
+    if(!alive)return;
+    var m=rot(cur.m),kicks=[0,-1,1,-2,2];
+    for(var i=0;i<kicks.length;i++){
+      if(!collide(m,cur.x+kicks[i],cur.y)){cur.m=m;cur.x+=kicks[i];draw();return}
+    }
+  }
+  function soft(){
+    if(!alive)return;
+    if(!collide(cur.m,cur.x,cur.y+1)){cur.y++;score+=1;stats()}else{lock()}
+    draw();schedule();
+  }
+  function hard(){
+    if(!alive)return;
+    while(!collide(cur.m,cur.x,cur.y+1)){cur.y++;score+=2}
+    stats();lock();draw();schedule();
+  }
+  var act={left:function(){move(-1)},right:function(){move(1)},rotate:rotate,down:soft,drop:hard};
+  var keys={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'rotate',ArrowDown:'down',' ':'drop'};
+  document.addEventListener('keydown',function(e){
+    var a=keys[e.key];
+    if(!a||!alive)return;
+    e.preventDefault();act[a]();
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.pad button'),function(b){
+    b.addEventListener('click',function(){act[b.getAttribute('data-a')]()});
+  });
+  startBtn.addEventListener('click',function(){
+    clearTimeout(timer);reset();alive=true;
+    startBtn.textContent='Yeniden başlat';startBtn.blur();
+    spawn();drawNext();draw();schedule();
+  });
+  reset();cur=null;nextId=null;draw();drawNext();
 })();
 </script>
 </body>
